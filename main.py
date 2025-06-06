@@ -12,12 +12,242 @@ import json
 import random
 import re
 import platform
+import sys
 
-with open('config.json', 'r') as file:
+configPath = "config.json"
+
+def to_camel_case(ogString):
+    string = ogString[0].lower()+ogString[1:]
+    string = string.split("-")
+    from_snake_or_kebab = lambda x: x[0]+"".join([x[i].capitalize() for i in range(1, len(x))])
+    if (len(string) > 1):
+        return [from_snake_or_kebab(string), ogString.split("-")]
+    else:
+        string = string[0].split("_")
+        if (len(string) > 1):
+            return [from_snake_or_kebab(string), ogString.split("_")]
+    return [string[0], re.split("(?<=[a-zA-Z])(?=[A-Z])|(?<=[0-9])(?=[A-Z])|(?<=[a-zA-Z])(?=[0-9])", ogString)]
+
+abbreviations = {
+    ("dir", "directory"),
+    ("db", "database"),
+    ("res", "resolution"),
+    ("prog", "progressive"),
+    ("sel", "selection"),
+    ("func", "function"),
+    ("idx", "index"),
+    (">", "direction"),
+    ("%", "percentage"),
+    ("thre", "threshold"),
+    ("class", "classifier"),
+    ("comp", "comparison"),
+    ("min", "minimum"),
+    ("max", "maximum"),
+    ("diff", "difference"),
+    ("pos", "positions"),
+    ("gen", "generate"),
+    ("hl", "highlight"),
+    ("def", "definition"),
+    ("ext", "extension"),
+    ("color", "colour"),
+    ("sb", "sponsorblock")
+}
+
+def expand_abbreviation(string):
+    to_regex = lambda x: "^"+x+"(?=$|[^a-z])|(?<=.)"+x.capitalize()+"(?=$|[^a-z])"
+    #to_test = lambda x: x+"Stuff"+x.capitalize()+"Stuff"+x+"Stuff"+x.capitalize()+"stuff"+x.capitalize()
+    for i in abbreviations:
+        string = i[1].capitalize().join(re.split(to_regex(i[0]), string))
+        string = string[0].lower()+string[1:]
+    return string
+
+def get_value_type(string):
+    match string:
+        case str():
+            if (re.fullmatch("[0-9]+", string)):
+                return int(string)
+            elif (re.fullmatch("[0-9]*\\.[0-9]+", string)):
+                return float(string)
+            elif (re.fullmatch("t|true|y|yes", string.lower())):
+                return True
+            elif (re.fullmatch("f|false|n|no", string.lower())):
+                return False
+            elif (re.fullmatch("^\\[.*\\]$|^\\{.*\\}$", string)):
+                string = get_value_type(eval(re.sub("(?<=[\\[\\{\\:,])(?=[^\\[\\{\\:,])|(?<=[^\\]\\}\\:,])(?=[\\]\\}\\:,])", "\"", string)))
+                return string
+            else:
+                return string
+        case list():
+            return [get_value_type(x) for x in string]
+        case dict():
+            return {expand_abbreviation(k): get_value_type(v) for k, v in string.items()}
+        case _:
+            return string
+
+argValuePairs = []
+exportConfig = False
+i = 1
+while i < len(sys.argv):
+    baseArg = sys.argv[i].split("=")
+    if (len(baseArg) > 1):
+        arg = baseArg.pop(0)[2:]
+        value = "=".join(baseArg)
+        complexArg = True
+    else:
+        arg = baseArg[0][1:]
+        i += 1
+        value = sys.argv[i]
+        complexArg = False
+    print("arg:       '"+arg+"'")
+    print("value:     '"+value+"'")
+    match arg: #match incase i ever want to explicitly define more options
+        case "c" | "config":
+            if (not(os.path.isfile(value))):
+                sys.exit("File '"+value+"' doesn't exist. Please choose a valid 'config.json' file")
+            configPath = value
+        case "e" | "export":
+            value = get_value_type(value)
+            if not type(value) is bool:
+                sys.exit("Value for '"+arg+"' must be a boolean")
+            exportConfig = value
+        case _:
+            cameled = to_camel_case(arg)
+            expArg = expand_abbreviation(cameled[0])
+            value = get_value_type(value)
+            argValuePairs.append([expArg, value, complexArg, arg, cameled[1]])
+    i += 1
+
+print()
+print(configPath)
+print(argValuePairs)
+print()
+
+with open(configPath, 'r') as file:
     config = json.load(file)
+
+def search_config_complex(opt, arg, available, config=config, search=""):
+    if (len(arg) == 0): return True
+    search += arg.pop(0)
+    opt[4].pop(0)
+    if search in available:
+        print("found match")
+        if (len(arg) == 0):
+            print("Valid argument: '--"+opt[3]+"'")
+            print("Setting in config")
+            print("  "+str(config[search]))
+            config[search] = opt[1]
+            print("  "+str(config[search]))
+            return False
+        else:
+            opt2 = opt.copy()
+            opt2[4] = opt[4].copy()
+            result = search_config_complex(opt2, arg.copy(), available, config, search)
+            del opt2[4]
+            del opt2
+            if (result):
+                config = config[search]
+                index = arg.pop(0)
+                if (len(arg) == 0):
+                    if type(config) is list:
+                        if (re.fullmatch("[0-9]+", index)):
+                            index = int(index)
+                        else:
+                            sys.exit("Invalid argument: '--"+opt[3]+"'. Index '"+opt[4][0]+"' is not a number")
+                            return False
+                        if(index >= len(config)):
+                            print("Valid argument: '--"+opt[3]+"'")
+                            print("Setting in config")
+                            print("Appending to list")
+                            config.append(opt[1])
+                            print("  "+str(config))
+                            return False
+                        else:
+                            print("Valid argument: '--"+opt[3]+"'")
+                            print("Setting in config")
+                            config[index] = opt[1]
+                            print("  "+str(config[index]))
+                            return False
+                    elif type(config) is dict:
+                        if index in config.keys():
+                            print("Valid argument: '--"+opt[3]+"'")
+                            print("Setting in config")
+                            config[index] = opt[1]
+                            print("  "+str(config[index]))
+                            return False
+                    sys.exit("Invalid argument: '--"+opt[3]+"'. Unable to index")
+                else:
+                    print(type(index))
+                    if type(config) is list:
+                        if (re.fullmatch("[0-9]+", index)):
+                            index = int(index)
+                        else:
+                            sys.exit("Invalid argument: '--"+opt[3]+"'. Index '"+opt[4][0]+"' is not a number")
+                        if(index >= len(config)):
+                            sys.exit("Invalid argument: '--"+opt[3]+"'. Index '"+opt[4][0]+"' is out of range")
+                    elif type(config) is dict:
+                        if not(index in config.keys()):
+                            sys.exit("Invalid argument: '--"+opt[3]+"'. Unable to index")
+                    else:
+                        sys.exit("Invalid argument: '--"+opt[3]+"'. Unable to index")
+                    config = config[index]
+                    if not type(config) is dict:
+                        sys.exit("Invalid argument: '--"+opt[3]+"'. Too many indicies or nested list")
+                    arg[0] = arg[0].lower()
+                    available = [x for x in config.keys() if (re.match("^"+arg[0], x))]
+                    if (len(available) == 0):
+                        sys.exit("Invalid argument: '--"+opt[3]+"'. No more options available")
+                    opt[4].pop(0)
+                    return search_config_complex(opt, arg, available, config)
+            return False
+    return search_config_complex(opt, arg, available, config, search)
+
+for opt in argValuePairs:
+    if (opt[2]):
+        arg = re.split("(?<=[a-zA-Z])(?=[A-Z])|(?<=[0-9])(?=[A-Z])|(?<=[a-zA-Z])(?=[0-9])", opt[0])
+        available = [x for x in config.keys() if (re.match("^"+arg[0], x))]
+        if (len(available) == 0):
+            sys.exit("Invalid argument: '--"+opt[0]+"'")
+        elif (len(available) == 1):
+            if (available[0] == opt[0]):
+                print("Valid argument: '--"+opt[0]+"'")
+                print("Setting in config")
+                print("  "+str(config[opt[0]]))
+                config[opt[0]] = opt[1]
+                print("  "+str(config[opt[0]]))
+            else:
+                print("Invalid argument: '--"+opt[0]+"'")
+        else:
+            if any(opt[0] == x for x in available):
+                print("Valid argument: '--"+opt[0]+"'")
+                print("Setting in config")
+                print("  "+str(config[opt[0]]))
+                config[opt[0]] = opt[1]
+                print("  "+str(config[opt[0]]))
+            else:
+                search_config_complex(opt, arg, available)
+    else:
+        print("Can't handle those yet. Sooo... I'm gonna skip")
 
 if (config["saveBaseDirectory"][-1] != "/"):
     config["saveBaseDirectory"] += "/"
+
+if (exportConfig):
+    i = 0
+    configPath = configPath.split(".")
+    extension = configPath.pop()
+    configPath = ".".join(configPath)
+    while True:
+        newConfigPath = configPath+str(i)+"."+extension
+        if (os.path.isfile(newConfigPath)):
+            i += 1
+        else:
+            print("Exported config to: '"+newConfigPath+"'")
+            info = json.dumps(config, indent=2)
+            with open(newConfigPath, "w") as outfile:
+                outfile.write(info)
+            break
+
+del configPath
 
 try:
     os.mkdir(config["saveBaseDirectory"])
@@ -45,11 +275,11 @@ if (operatingSystem != "Linux"):
     print("This was only tested on Linux")
     print("You are on "+operatingSystem)
     if (os == "Windows"):
-        if (re.search("grep", config["commandlineTools"]["getVideoid"])):
-            print("  You are using 'grep' in 'commandlineTools' 'getVideoid'")
+        if (re.search("grep", config["commandlineTools"]["getVideoId"])):
+            print("  You are using 'grep' in 'commandlineTools' 'getVideoId'")
             print("  Please change your config")
             print("  For now setting to: 'findstr /c:\"$id\"'")
-            config["commandlineTools"]["getVideoid"] = "findstr /c:\"$id\""
+            config["commandlineTools"]["getVideoId"] = "findstr /c:\"$id\""
         if (re.search("head", config["commandlineTools"]["getHead"])):
             print("  You are using 'head' in 'commandlineTools' 'getHead'")
             print("  Please change your config")
@@ -66,13 +296,13 @@ if (operatingSystem != "Linux"):
     if not(answer.lower() in ["y", "yes"]):
         exit()
 
-grep = re.split("[$][$]", config["commandlineTools"]["getVideoid"])
+grep = re.split("[$][$]", config["commandlineTools"]["getVideoId"])
 if (not(any(re.search("[$]id", x) for x in grep))):
     grep[-1] += " \""+config["commandlineTools"]["runTimeId"]+"\""
 if (not(any(re.search("[$]path", x) for x in grep))):
     grep[-1] += " "+config["sponsorblockDatabasePath"]
 grep = "$".join([re.sub("[$]path", config["sponsorblockDatabasePath"], re.sub("[$]id", config["commandlineTools"]["runTimeId"], x)) for x in grep])
-config["commandlineTools"]["getVideoid"] = grep
+config["commandlineTools"]["getVideoId"] = grep
 del grep
 
 head = re.split("[$][$]", config["commandlineTools"]["getHead"])
@@ -88,8 +318,8 @@ match config["searchType"]:
     case 0:
         search = config["search"][config["searchType"]]
         print("Search with scrapetube by channelID")
-        if (search["channelIDs"] == [] and search["channelURLs"] == [] and search["channelUsernames"] == []):
-            print("No values provided for 'channelIDs', 'channelURLs' and 'channelUsernames'")
+        if (search["channelIds"] == [] and search["channelUrls"] == [] and search["channelUsernames"] == []):
+            print("No values provided for 'channelIds', 'channelUrls' and 'channelUsernames'")
             exit()
         contentType = None
         if (search["contentType"] == None):
@@ -99,7 +329,7 @@ match config["searchType"]:
         else:
             print("Invalid type '"+str(search["searchType"])+"' for 'contentType'")
             exit()
-        for i in search["channelIDs"]:
+        for i in search["channelIds"]:
             videos = scrapetube.get_channel(
                 channel_id=i,
                 limit=search["limit"],
@@ -109,7 +339,7 @@ match config["searchType"]:
                 content_type=contentType)
             for video in videos:
                 videoIDs.add(video["videoId"])
-        for i in search["channelURLs"]:
+        for i in search["channelUrls"]:
             videos = scrapetube.get_channel(
                 channel_url=i,
                 limit=search["limit"],
@@ -132,8 +362,8 @@ match config["searchType"]:
     case 1:
         search = config["search"][config["searchType"]]
         print("Search with pytubefix by videoIDs")
-        videoIDs = set(search["videoIDs"])
-        [videoIDs.add(x[2:]) for i in search["videoURLs"] for x in re.findall("v=[\\w\\-]*", i)]
+        videoIDs = set(search["videoIds"])
+        [videoIDs.add(x[2:]) for i in search["videoUrls"] for x in re.findall("v=[\\w\\-]*", i)]
     case 2:
         search = config["search"][config["searchType"]]
         print("Search with pytubefix by search term")
@@ -199,7 +429,7 @@ def segment_list(df, value, dist=200):
     return all
 
 def get_videoid_from_sponsorblock_database(videoID):
-    grep = re.sub(config["commandlineTools"]["runTimeIdRegex"], videoID, config["commandlineTools"]["getVideoid"])
+    grep = re.sub(config["commandlineTools"]["runTimeIdRegex"], videoID, config["commandlineTools"]["getVideoId"])
     out = os.popen(grep).read()
 
     if (out == ""):
@@ -214,11 +444,11 @@ def get_videoid_from_sponsorblock_database(videoID):
     print(df)
 
     for i in config["filterSponsorblockDatabase"]:
-        if ((i["comp"] == "in") ^ isinstance(i["value"], list)):
-            print("'comp' is incompatible for type of 'value'. Skipping")
+        if ((i["comparison"] == "in") ^ isinstance(i["value"], list)):
+            print("'comparison' is incompatible for type of 'value'. Skipping")
             print("  "+str(i))
             continue
-        pyCmd = " "+i["comp"]+" "+("\""+str(i["value"])+"\"" if (isinstance(i["value"], str)) else str(i["value"]))
+        pyCmd = " "+i["comparison"]+" "+("\""+str(i["value"])+"\"" if (isinstance(i["value"], str)) else str(i["value"]))
         stringify = lambda series: ("\""+str(series.loc[i["column"]])+"\"") if (type(series.loc[i["column"]]) == str) else str(series.loc[i["column"]])
         df = df.loc[[eval(stringify(series)+pyCmd) for idx, series in df.iterrows()]]
 
@@ -366,7 +596,7 @@ def guess_bar_var(avg):
     for i in range(1, len(var)):
         a = np.array([similar[addTo]["avg"], var[i]])
         b = a.var(axis=0).max().item()
-        if (b < config["barDirectionClassifierThresshold"]):
+        if (b < config["barDirectionClassifierThreshold"]):
             similar[addTo]["avg"] = a.mean(axis=0)
             similar[addTo]["amount"] += 1
         else:
@@ -387,7 +617,7 @@ def guess_bar_std(avg):
     for i in range(1, len(std)):
         a = np.array([similar[addTo]["avg"], std[i]])
         b = a.std(axis=0).max().item()
-        if (b < config["barDirectionClassifierThresshold"]):
+        if (b < config["barDirectionClassifierThreshold"]):
             similar[addTo]["avg"] = a.mean(axis=0)
             similar[addTo]["amount"] += 1
         else:
@@ -460,7 +690,7 @@ def guess_bar_direction(sponsorArray, samples, type):
     if (min(lengths) == 0):
         emptyCount = lengths.count(0)
         print("No left-to-right or right-to-left progress bar found "+str(emptyCount)+"/"+str(len(potBar))+" times")
-        if (emptyCount/len(potBar) > config["noBarThressholdPercentage"]):
+        if (emptyCount/len(potBar) > config["noBarThresholdPercentage"]):
             print("Too few. Skipping")
             return None
         else:
@@ -471,7 +701,7 @@ def guess_bar_direction(sponsorArray, samples, type):
             potBar = [x[0] for x in potBar]
             potBarStart = list(filter(lambda x: x["start"] == 0, potBar))
             potBarEnd = list(filter(lambda x: x["start"]+x["amount"] == sponsorArray.shape[0]-1, potBar))
-            if (abs(len(potBarStart)-len(potBarEnd)) < len(potBar)*config["minBarDifferencePercentage"]):
+            if (abs(len(potBarStart)-len(potBarEnd)) < len(potBar)*config["minmumBarDifferencePercentage"]):
                 print("Could be either left-to-right or right-to-left progress bar. Skipping")
                 return None
             if (len(potBarStart) >= len(potBarEnd)):
@@ -483,7 +713,7 @@ def guess_bar_direction(sponsorArray, samples, type):
         case 2:
             potBarStart = [x for a in potBar for x in a if (x["start"] == 0)]
             potBarEnd = [x for a in potBar for x in a if (x["start"]+x["amount"] == sponsorArray.shape[0]-1)]
-            if (abs(len(potBarStart)-len(potBarEnd)) < len(potBar)*config["minBarDifferencePercentage"]):
+            if (abs(len(potBarStart)-len(potBarEnd)) < len(potBar)*config["minmumBarDifferencePercentage"]):
                 print("Could be either left-to-right or right-to-left progress bar. Skipping")
                 return None
             if (len(potBarStart) >= len(potBarEnd)):
@@ -532,18 +762,18 @@ def sample_bar(sponsorArray, direction, type):
             return None
     match direction:
         case "left-to-right":
-            indecies = list(range(sponsorArray.shape[1]))
+            indicies = list(range(sponsorArray.shape[1]))
         case "right-to-left":
-            indecies = list(range(sponsorArray.shape[1]-1, -1, -1))
+            indicies = list(range(sponsorArray.shape[1]-1, -1, -1))
         case _:
             return None
-    startIndex = indecies.pop(0)
+    startIndex = indicies.pop(0)
     barPos = np.arange(sponsorArray.shape[0], dtype=np.uint8)
     for t in range(sponsorArray.shape[0]):
         frame = sponsorArray[t]
         start = frame[startIndex]
         pos = 0
-        for i in indecies:
+        for i in indicies:
             compArry = np.array([start, frame[i]])
             if (compFunc(compArry) < 20):
                 start = compArry.mean(axis=0)
@@ -562,15 +792,15 @@ def plot_bar_positions(sponsorArray, barPos, video, sponsor):
         match barPositionsPlot:
             case "percent":
                 barPosProcessed = (barPos.astype(np.float16)/sponsorArray.shape[1])*100
-                barStartFrame = np.arange(sponsorArray.shape[0])[barPosProcessed < config["startOfBarMaxPercent"]*100]
+                barStartFrame = np.arange(sponsorArray.shape[0])[barPosProcessed < config["startOfBarMaximumPercentage"]*100]
                 if (barStartFrame.shape[0] == 0):
-                    print("Couldn't find a start frame for the bar. Try adjusting 'startOfBarMaxPercent'. Assuming 0")
+                    print("Couldn't find a start frame for the bar. Try adjusting 'startOfBarMaximumPercentage'. Assuming 0")
                     barStartFrame = 0
                 else:
                     barStartFrame = barStartFrame[0].item()
-                barEndFrame = np.arange(sponsorArray.shape[0])[barPosProcessed > config["endOfBarMinPercent"]*100]
+                barEndFrame = np.arange(sponsorArray.shape[0])[barPosProcessed > config["endOfBarMinmumPercentage"]*100]
                 if (barEndFrame.shape[0] == 0):
-                    print("Couldn't find an end frame for the bar. Try adjusting 'endOfBarMaxPercent'. Assuming "+str(sponsorArray.shape[0]-1))
+                    print("Couldn't find an end frame for the bar. Try adjusting 'endOfBarMaximumPercentage'. Assuming "+str(sponsorArray.shape[0]-1))
                     barEndFrame = sponsorArray.shape[0]-1
                 else:
                     barEndFrame = barEndFrame[-1].item()
@@ -578,15 +808,15 @@ def plot_bar_positions(sponsorArray, barPos, video, sponsor):
                 yLabel = "Progression in %"
             case "pixels":
                 barPosProcessed = barPos
-                barStartFrame = np.arange(sponsorArray.shape[0])[barPosProcessed < config["startOfBarMaxPercent"]*sponsorArray.shape[1]]
+                barStartFrame = np.arange(sponsorArray.shape[0])[barPosProcessed < config["startOfBarMaximumPercentage"]*sponsorArray.shape[1]]
                 if (barStartFrame.shape[0] == 0):
-                    print("Couldn't find a start frame for the bar. Try adjusting 'startOfBarMaxPercent'. Assuming 0")
+                    print("Couldn't find a start frame for the bar. Try adjusting 'startOfBarMaximumPercentage'. Assuming 0")
                     barStartFrame = 0
                 else:
                     barStartFrame = barStartFrame[0].item()
-                barEndFrame = np.arange(sponsorArray.shape[0])[barPosProcessed > config["endOfBarMinPercent"]*sponsorArray.shape[1]]
+                barEndFrame = np.arange(sponsorArray.shape[0])[barPosProcessed > config["endOfBarMinmumPercentage"]*sponsorArray.shape[1]]
                 if (barEndFrame.shape[0] == 0):
-                    print("Couldn't find an end frame for the bar. Try adjusting 'endOfBarMaxPercent'. Assuming "+str(sponsorArray.shape[0]-1))
+                    print("Couldn't find an end frame for the bar. Try adjusting 'endOfBarMaximumPercentage'. Assuming "+str(sponsorArray.shape[0]-1))
                     barEndFrame = sponsorArray.shape[0]-1
                 else:
                     barEndFrame = barEndFrame[-1].item()
@@ -603,8 +833,8 @@ def plot_bar_positions(sponsorArray, barPos, video, sponsor):
             plt.title(plot["title"])
             plt.xlabel("Frames ("+str(barPosProcessed.shape[0])+")")
             plt.ylabel(yLabel)
-            if (plot["highlightSponsorBlockSponsorDefinition"]):
-                plt.fill_between([0, barPosProcessed.shape[0]-1], maxPos, color=plot["SponsorBlockSponsorDefinitionColour"], label="Sponsor segment defined by SponsorBlock")
+            if (plot["highlightSponsorblockSponsorDefinition"]):
+                plt.fill_between([0, barPosProcessed.shape[0]-1], maxPos, color=plot["SponsorblockSponsorDefinitionColour"], label="Sponsor segment defined by SponsorBlock")
             if (plot["highlightYouTuberSponsorDefinition"]):
                 plt.fill_between([barStartFrame, barEndFrame], maxPos, color=plot["YouTuberSponsorDefinitionColour"], label="Sponsor segment defined by YouTuber")
             if (plot["showBarPositions"]):
@@ -675,7 +905,7 @@ for video in videos:
 
     if (config["saveBarInfo"]):
         del video["video"]
-        info = json.dumps(video, indent=4)
+        info = json.dumps(video, indent=2)
         with open(video["directory"]+"/barInfo.json", "w") as outfile:
             outfile.write(info)
 

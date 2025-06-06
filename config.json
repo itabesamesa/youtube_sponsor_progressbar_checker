@@ -9,13 +9,13 @@
   "_comment": "proxies don't seem to work, so I disabled them",
   "urlBase": "https://www.youtube.com/watch?v=",
   "searchType": 0,
-  "_comment": "0: search with channelID, channelURLs and channelUsernames, 1: search list of videoIDs and/or URLs, 2: search with YouTube search. Duplicates are ignored",
+  "_comment": "0: search with channelIds, channelUrls and channelUsernames, 1: search list of videoIds and/or Urls, 2: search with YouTube search. Duplicates are ignored",
   "search": [
     {
-      "channelIDs": [],
-      "channelURLs": [],
+      "channelIds": [],
+      "channelUrls": [],
       "channelUsernames": [],
-      "_comment": "first 'channelIDs', then 'channelURLs' and lastly 'channelUsernames' is checked",
+      "_comment": "first 'channelIds', then 'channelUrls' and lastly 'channelUsernames' is checked",
       "_comment": "provide channel usernames without the '@'",
       "limit": 10,
       "_comment": "0 will disable limit on scrapetube",
@@ -26,8 +26,8 @@
       "_comment": "available options are: videos, shorts, streams. Default is videos"
     },
     {
-      "videoIDs": [],
-      "videoURLs": []
+      "videoIds": [],
+      "videoUrls": []
     },
     {
       "search": "",
@@ -74,7 +74,7 @@
     "_comment": "'$id' is replaced with 'runTimeId' so that the static '$path' variable can be preprocessed",
     "_comment": "'runTimeIdRegex' is the regex string used to search and replace 'runTimeId'",
     "_comment": "best you don't change these...",
-    "getVideoid": "grep",
+    "getVideoId": "grep",
     "_example": "grep \"$id.*YouTube\" $path",
     "_comment": "for windows try: findstr /c:\"$id\"",
     "_comment": "grep should work for macOS",
@@ -84,14 +84,14 @@
     "_comment": "head should work for macOS"
   },
   "filterSponsorblockDatabase": [
-    {"column": "category", "comp": "==", "value": "sponsor"}
+    {"column": "category", "comparison": "==", "value": "sponsor"}
   ],
-  "_format": "value-in-sponsorblock-column 'comp' 'value'",
+  "_format": "value-in-sponsorblock-column 'comparison' 'value'",
   "_example": [
-    {"column": "category", "comp": "in", "value": ["sponsor", "selfpromo"]},
-    {"column": "votes", "comp": ">", "value": 0}
+    {"column": "category", "comparison": "in", "value": ["sponsor", "selfpromo"]},
+    {"column": "votes", "comparison": ">", "value": 0}
   ],
-  "_comment": "available options for 'comp': <, <=, ==, !=, >, >=, in",
+  "_comment": "available options for 'comparison': <, <=, ==, !=, >, >=, in",
   "_comment": "'in' is only available if 'value' is a list",
   "_comment": "available options for 'category': sponsor, selfpromo, interaction, intro, outro, preview, music_offtopic, filler. Visit https://wiki.sponsor.ajay.app/w/Types#Category for further refrence",
   "ignoreExistingDirectory": false,
@@ -114,13 +114,13 @@
   "sampleDirectionCustom": [],
   "_comment": "list of percentages e.g.: [0.1, 0.3, 0.5, 0.7, 0.9]. It will ignore the value in 'sampleForBarDirection'. If empty, it will use 'sampleType': equidistant",
   "barDirectionScanRange": [-5, 5],
-  "barDirectionClassifierThresshold": 10,
+  "barDirectionClassifierThreshold": 10,
   "barDirectionComparisonFunction": "std",
   "_comment": "available options: std, var. Standard deviation, variance",
-  "noBarThressholdPercentage": 0.2,
-  "_comment": "If a progress bar isn't always found, take percentage and skip if above 'noBarThressholdPercentage'",
-  "minBarDifferencePercentage": 0.8,
-  "_comment": "If there are both left-to-right and right-to-left bars found, skip if difference is under amount-of-non-empty-sampled-bars * 'minBarDifferencePercentage'",
+  "noBarThresholdPercentage": 0.2,
+  "_comment": "If a progress bar isn't always found, take percentage and skip if above 'noBarThresholdPercentage'",
+  "minmumBarDifferencePercentage": 0.8,
+  "_comment": "If there are both left-to-right and right-to-left bars found, skip if difference is under amount-of-non-empty-sampled-bars * 'minmumBarDifferencePercentage'",
   "skipOnGuessConflict": false,
   "sampleBarComparisonFunction": "std",
   "_comment": "available options: std, var. Standard deviation, variance",
@@ -129,14 +129,14 @@
   "saveBarPositions": false,
   "saveBarInfo": true,
   "_comment": "'saveBarInfo' will ignore 'saveBarPositions'",
-  "startOfBarMaxPercent": 0.02,
-  "endOfBarMinPercent": 0.98,
+  "startOfBarMaximumPercentage": 0.02,
+  "endOfBarMinmumPercentage": 0.98,
   "plot": {
     "generatePlot": true,
     "showPlot": false,
     "title": "Sponsor segment progress bar",
-    "highlightSponsorBlockSponsorDefinition": true,
-    "SponsorBlockSponsorDefinitionColour": "red",
+    "highlightSponsorblockSponsorDefinition": true,
+    "SponsorblockSponsorDefinitionColour": "red",
     "highlightYouTuberSponsorDefinition": true,
     "YouTuberSponsorDefinitionColour": "green",
     "showBarPositions": true,
